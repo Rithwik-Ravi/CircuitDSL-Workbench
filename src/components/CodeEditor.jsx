@@ -1,7 +1,5 @@
-
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Code, Copy, AlertCircle, AlertTriangle } from 'lucide-react';
-
 export function CodeEditor({
   dslCode,
   setDslCode,
@@ -9,89 +7,60 @@ export function CodeEditor({
   setLineWrap,
   diagnostics = [],
   onDiagnosticSelect,
-  selectedDiagnostic
+  selectedDiagnostic,
 }) {
   const textareaRef = useRef(null);
   const gutterRef = useRef(null);
   const highlightRef = useRef(null);
-
-  const lines = useMemo(
-    () => dslCode.split('\n'),
-    [dslCode]
-  );
-
+  const lines = useMemo(() => dslCode.split('\n'), [dslCode]);
   const diagnosticsByLine = useMemo(() => {
     const result = new Map();
-
     diagnostics.forEach((diagnostic) => {
       const line = Math.max(1, Number(diagnostic.line) || 1);
-
       if (!result.has(line)) {
         result.set(line, []);
       }
-
       result.get(line).push(diagnostic);
     });
-
     return result;
   }, [diagnostics]);
-
   useEffect(() => {
     if (!selectedDiagnostic || !textareaRef.current) return;
-
     const textarea = textareaRef.current;
-    const targetLine = Math.max(
-      1,
-      Number(selectedDiagnostic.line) || 1
-    );
-    const targetCol = Math.max(
-      1,
-      Number(selectedDiagnostic.col) || 1
-    );
-
+    const targetLine = Math.max(1, Number(selectedDiagnostic.line) || 1);
+    const targetCol = Math.max(1, Number(selectedDiagnostic.col) || 1);
     const lineIndex = Math.min(targetLine - 1, lines.length - 1);
     const before = lines.slice(0, lineIndex).join('\n');
     const start = before.length + (lineIndex > 0 ? 1 : 0) + targetCol - 1;
     const lineText = lines[lineIndex] || '';
     const selectionStart = Math.min(start, dslCode.length);
-    const selectionEnd = Math.min(
-      selectionStart + 1,
-      dslCode.length
-    );
-
+    const selectionEnd = Math.min(selectionStart + 1, dslCode.length);
     textarea.focus();
     textarea.setSelectionRange(selectionStart, selectionEnd);
-
     // Move the editor close to the diagnostic.
     const lineHeight = 20;
     textarea.scrollTop = Math.max(
       0,
       lineIndex * lineHeight - textarea.clientHeight / 2
     );
-
     if (gutterRef.current) {
       gutterRef.current.scrollTop = textarea.scrollTop;
     }
-
     if (highlightRef.current) {
       highlightRef.current.scrollTop = textarea.scrollTop;
     }
   }, [selectedDiagnostic, dslCode, lines]);
-
   const handleScroll = (event) => {
     const textarea = event.currentTarget;
-
     if (gutterRef.current) {
       gutterRef.current.scrollTop = textarea.scrollTop;
       gutterRef.current.scrollLeft = textarea.scrollLeft;
     }
-
     if (highlightRef.current) {
       highlightRef.current.scrollTop = textarea.scrollTop;
       highlightRef.current.scrollLeft = textarea.scrollLeft;
     }
   };
-
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(dslCode);
@@ -99,24 +68,20 @@ export function CodeEditor({
       console.error('Unable to copy source code:', error);
     }
   };
-
   return (
     <div className="min-h-0 flex-1 flex flex-col bg-[#1c1917]">
       <div className="h-10 shrink-0 bg-[#292524]/80 px-4 flex items-center justify-between border-b border-[#44403c]">
         <div className="flex items-center gap-2">
           <Code className="w-4 h-4 text-[#f59e0b]" />
-
           <span className="text-xs font-bold uppercase tracking-wider text-[#a8a29e]">
             DSL Source Code
           </span>
-
           {diagnostics.some((d) => d.type === 'error') && (
             <span className="flex items-center gap-1 text-[10px] text-rose-400">
               <AlertCircle className="w-3 h-3" />
               Errors
             </span>
           )}
-
           {diagnostics.some((d) => d.type === 'warning') && (
             <span className="flex items-center gap-1 text-[10px] text-amber-400">
               <AlertTriangle className="w-3 h-3" />
@@ -124,7 +89,6 @@ export function CodeEditor({
             </span>
           )}
         </div>
-
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -137,7 +101,6 @@ export function CodeEditor({
           >
             {lineWrap ? 'Wrap On' : 'Wrap Off'}
           </button>
-
           <button
             type="button"
             onClick={handleCopy}
@@ -149,7 +112,6 @@ export function CodeEditor({
           </button>
         </div>
       </div>
-
       <div className="min-h-0 flex-1 flex overflow-hidden font-mono text-xs">
         {/* Line number gutter */}
         <div
@@ -160,15 +122,11 @@ export function CodeEditor({
             {lines.map((line, index) => {
               const lineNo = index + 1;
               const lineDiagnostics = diagnosticsByLine.get(lineNo) || [];
-              const isError = lineDiagnostics.some(
-                (d) => d.type === 'error'
-              );
+              const isError = lineDiagnostics.some((d) => d.type === 'error');
               const isWarning = lineDiagnostics.some(
                 (d) => d.type === 'warning'
               );
-              const isSelected =
-                Number(selectedDiagnostic?.line) === lineNo;
-
+              const isSelected = Number(selectedDiagnostic?.line) === lineNo;
               return (
                 <button
                   key={lineNo}
@@ -200,7 +158,6 @@ export function CodeEditor({
             })}
           </div>
         </div>
-
         {/* Source editor */}
         <div className="relative min-w-0 flex-1 overflow-hidden">
           {/* Background highlights */}
@@ -215,15 +172,11 @@ export function CodeEditor({
               {lines.map((line, index) => {
                 const lineNo = index + 1;
                 const lineDiagnostics = diagnosticsByLine.get(lineNo) || [];
-                const isError = lineDiagnostics.some(
-                  (d) => d.type === 'error'
-                );
+                const isError = lineDiagnostics.some((d) => d.type === 'error');
                 const isWarning = lineDiagnostics.some(
                   (d) => d.type === 'warning'
                 );
-                const isSelected =
-                  Number(selectedDiagnostic?.line) === lineNo;
-
+                const isSelected = Number(selectedDiagnostic?.line) === lineNo;
                 return (
                   <div
                     key={lineNo}
@@ -243,7 +196,6 @@ export function CodeEditor({
               })}
             </div>
           </div>
-
           <textarea
             ref={textareaRef}
             value={dslCode}
@@ -260,7 +212,7 @@ export function CodeEditor({
             }`}
             style={{
               tabSize: 2,
-              overflowWrap: lineWrap ? 'anywhere' : 'normal'
+              overflowWrap: lineWrap ? 'anywhere' : 'normal',
             }}
           />
         </div>

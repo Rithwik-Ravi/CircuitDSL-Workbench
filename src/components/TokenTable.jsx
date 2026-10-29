@@ -1,16 +1,12 @@
-
 export function TokenTable({ tokens = [] }) {
   return (
     <div className="w-full h-full overflow-auto rounded-xl border border-stone-700 bg-[#171717] p-4">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">
-          Tokenization
-        </h2>
+        <h2 className="text-lg font-semibold text-white">Tokenization</h2>
         <span className="text-sm text-stone-400">
           Total Tokens: {tokens.length}
         </span>
       </div>
-
       {tokens.length === 0 ? (
         <p className="text-sm text-stone-400">
           No tokens found. Enter valid CircuitDSL code in the editor.
@@ -34,16 +30,16 @@ export function TokenTable({ tokens = [] }) {
               >
                 <td className="p-3 text-stone-500">{index + 1}</td>
                 <td className="p-3 font-mono text-amber-300">
-                  {String(token.value ?? token.lexeme ?? token.type ?? "")}
+                  {String(token.value ?? token.lexeme ?? token.type ?? '')}
                 </td>
                 <td className="p-3 text-sky-300">
-                  {String(token.type ?? token.kind ?? "UNKNOWN")}
+                  {String(token.type ?? token.kind ?? 'UNKNOWN')}
                 </td>
                 <td className="p-3 text-stone-300">
-                  {token.line ?? token.loc?.line ?? "—"}
+                  {token.line ?? token.loc?.line ?? '—'}
                 </td>
                 <td className="p-3 text-stone-300">
-                  {token.column ?? token.col ?? token.loc?.column ?? "—"}
+                  {token.column ?? token.col ?? token.loc?.column ?? '—'}
                 </td>
               </tr>
             ))}

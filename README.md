@@ -64,28 +64,22 @@ The following example demonstrates dead code, repeated expressions, and redundan
 
 ```text
 // Circuit with Dead Code, CSE, and Redundant Gates
-
 circuit OptimizationDemo {
     input a: Wire;
     input b: Wire;
     input enable: Wire;
     output out_final: Wire;
-
     wire dead_wire: Wire;
     wire cse_1: Wire;
     wire cse_2: Wire;
     wire const_wire: Wire;
-
     // Dead code: unused result
     dead_wire = XOR(a, b);
-
     // Common subexpression
     cse_1 = AND(a, b);
     cse_2 = AND(a, b);
-
     // Redundant logic: OR(x, x) = x
     const_wire = OR(cse_1, cse_2);
-
     // Primary output
     out_final = AND(const_wire, enable);
 }
@@ -97,8 +91,7 @@ circuit OptimizationDemo {
 - **Common-Subexpression Elimination:** `cse_1` and `cse_2` compute the same expression, `AND(a, b)`, which may be shared.
 - **Redundant Logic Simplification:** `OR(x, x)` is equivalent to `x`, so `const_wire` can be simplified.
 - **Output Logic:** The final output combines the simplified expression with `enable`.
-
-The exact optimized output depends on the optimization passes implemented by the compiler.
+  The exact optimized output depends on the optimization passes implemented by the compiler.
 
 ## Compiler Workflow
 
@@ -118,7 +111,6 @@ The exact optimized output depends on the optimization passes implemented by the
 ## Author
 
 **V. Jaya Adithya**
-
 [GitHub Profile](https://github.com/Jayaadithya-cody)
 
 ## License
