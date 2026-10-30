@@ -104,6 +104,17 @@ circuit OptimizationDemo {
 7. Circuit visualization and truth-table generation
 8. Verilog generation
 
+## Testing & Quality
+
+Run the test suite, linter, and coverage:
+
+```bash
+npm run test       # Run tests via Vitest
+npm run coverage   # Generate test coverage report
+npm run lint       # Lint source code via ESLint
+npm run format     # Format repository with Prettier
+```
+
 ## Repository
 
 **GitHub:** [Jayaadithya-cody/Circuit-DSL](https://github.com/Jayaadithya-cody/Circuit-DSL)
@@ -115,4 +126,5 @@ circuit OptimizationDemo {
 
 ## License
 
-No license has been specified. Add a `LICENSE` file if you intend to distribute the project under an open-source license.
+This project is licensed under the [MIT License](LICENSE).
+

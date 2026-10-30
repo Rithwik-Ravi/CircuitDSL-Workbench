@@ -1,3 +1,4 @@
+import { describe, test, expect } from 'vitest';
 import { Lexer } from '../compiler/Lexer.js';
 import { ASTParser } from '../compiler/ASTParser.js';
 import { SemanticAnalyzer } from '../compiler/SemanticAnalyzer.js';
