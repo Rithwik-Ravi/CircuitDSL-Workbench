@@ -11,6 +11,9 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
+  Maximize2,
+  Minimize2,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { compile, CircuitSimulator } from './compiler/index.js';
 import { compileAsync } from './compiler/compilerClient.js';
@@ -43,9 +46,37 @@ export default function App() {
   const [activeDockTab, setActiveDockTab] = useState('problems'); // 'problems', 'timemachine'
   const [selectedDiagnostic, setSelectedDiagnostic] = useState(null);
   const [selectedSignal, setSelectedSignal] = useState(null);
-
-  // Time Machine snapshot index
   const [snapshotIndex, setSnapshotIndex] = useState(0);
+  // Resizable bottom dock (Problems / Time Machine)
+  const [dockHeight, setDockHeight] = useState(320); // Comfortable default
+  const [isDraggingDock, setIsDraggingDock] = useState(false);
+  const dragStartYRef = useRef(0);
+  const dragStartHeightRef = useRef(320);
+
+  const handleDockMouseDown = (e) => {
+    setIsDraggingDock(true);
+    dragStartYRef.current = e.clientY;
+    dragStartHeightRef.current = dockHeight;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!isDraggingDock) return;
+    const handleMouseMove = (e) => {
+      const deltaY = dragStartYRef.current - e.clientY;
+      const newHeight = Math.min(680, Math.max(120, dragStartHeightRef.current + deltaY));
+      setDockHeight(newHeight);
+    };
+    const handleMouseUp = () => {
+      setIsDraggingDock(false);
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingDock]);
 
   // Dynamic input states (D10): derived strictly from ast.expandedInputs
   const [inputStates, setInputStates] = useState({});
@@ -276,10 +307,22 @@ export default function App() {
             />
           </div>
 
+          {/* Draggable Resizer Splitter */}
+          <div
+            onMouseDown={handleDockMouseDown}
+            className="h-2 w-full bg-[#262423] hover:bg-amber-500/80 active:bg-amber-500 cursor-row-resize transition-colors flex items-center justify-center group z-10 select-none border-t border-[#3b3836]"
+            title="Click and drag to resize Time Machine / Problems dock"
+          >
+            <div className="w-12 h-1 rounded-full bg-[#57534e] group-hover:bg-white transition-colors" />
+          </div>
+
           {/* Bottom Dock: Problems Panel or Optimizer Time Machine */}
-          <div className="h-48 border-t border-[#3b3836] flex flex-col bg-[#1f1d1b]">
-            <div className="h-8 bg-[#262423] px-3 flex items-center justify-between border-b border-[#3b3836] text-xs">
-              <div className="flex space-x-1">
+          <div
+            style={{ height: `${dockHeight}px` }}
+            className="flex flex-col bg-[#1f1d1b] overflow-hidden"
+          >
+            <div className="h-8 bg-[#262423] px-3 flex items-center justify-between border-b border-[#3b3836] text-xs select-none shrink-0">
+              <div className="flex space-x-1 items-center">
                 <button
                   onClick={() => setActiveDockTab('problems')}
                   className={`px-2.5 py-0.5 rounded font-semibold transition-colors ${
@@ -291,7 +334,10 @@ export default function App() {
                   Problems ({compilerResult.diagnostics.length})
                 </button>
                 <button
-                  onClick={() => setActiveDockTab('timemachine')}
+                  onClick={() => {
+                    setActiveDockTab('timemachine');
+                    if (dockHeight < 280) setDockHeight(340);
+                  }}
                   className={`px-2.5 py-0.5 rounded font-semibold transition-colors flex items-center gap-1 ${
                     activeDockTab === 'timemachine'
                       ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
@@ -302,19 +348,65 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Metrics Summary Chips */}
-              {compilerResult.metrics && (
-                <div className="flex items-center space-x-2 font-mono text-[11px] text-[#a8a29e]">
-                  <span>Gates: {compilerResult.metrics.optimized.gateCount}</span>
-                  <span>•</span>
-                  <span>Depth: {compilerResult.metrics.optimized.logicDepth}</span>
-                  {compilerResult.metrics.savings.gates > 0 && (
-                    <span className="text-emerald-400 font-bold">
-                      (-{compilerResult.metrics.savings.gates}%)
-                    </span>
-                  )}
+              {/* Metrics Summary Chips & Height Controls */}
+              <div className="flex items-center space-x-3">
+                {compilerResult.metrics && (
+                  <div className="flex items-center space-x-2 font-mono text-[11px] text-[#a8a29e]">
+                    <span>Gates: {compilerResult.metrics.optimized.gateCount}</span>
+                    <span>•</span>
+                    <span>Depth: {compilerResult.metrics.optimized.logicDepth}</span>
+                    {compilerResult.metrics.savings.gates > 0 && (
+                      <span className="text-emerald-400 font-bold">
+                        (-{compilerResult.metrics.savings.gates}%)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Dock Height Size Buttons */}
+                <div className="flex items-center space-x-1 pl-2 border-l border-[#3b3836]">
+                  <button
+                    onClick={() => setDockHeight(220)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                      dockHeight <= 250
+                        ? 'bg-[#3b3836] text-white font-bold'
+                        : 'text-[#a8a29e] hover:text-white'
+                    }`}
+                    title="Compact view (220px)"
+                  >
+                    S
+                  </button>
+                  <button
+                    onClick={() => setDockHeight(340)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                      dockHeight > 250 && dockHeight <= 420
+                        ? 'bg-[#3b3836] text-white font-bold'
+                        : 'text-[#a8a29e] hover:text-white'
+                    }`}
+                    title="Standard view (340px)"
+                  >
+                    M
+                  </button>
+                  <button
+                    onClick={() => setDockHeight(500)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                      dockHeight > 420
+                        ? 'bg-[#3b3836] text-white font-bold'
+                        : 'text-[#a8a29e] hover:text-white'
+                    }`}
+                    title="Enlarged view (500px)"
+                  >
+                    L
+                  </button>
+                  <button
+                    onClick={() => setDockHeight((prev) => (prev > 260 ? 140 : 420))}
+                    className="p-1 text-[#a8a29e] hover:text-white hover:bg-[#3b3836] rounded transition-colors"
+                    title={dockHeight > 260 ? 'Collapse dock' : 'Expand dock'}
+                  >
+                    {dockHeight > 260 ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="flex-1 overflow-auto">
