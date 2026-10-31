@@ -6,9 +6,20 @@ export const TOKEN_TYPES = {
   EOF: 'EOF',
 };
 
+const KEYWORDS = new Set([
+  'circuit',
+  'module',
+  'input',
+  'output',
+  'wire',
+  'Wire',
+  'assert',
+  'test',
+]);
+
 export class Lexer {
   constructor(input) {
-    this.input = input;
+    this.input = input || '';
     this.pos = 0;
     this.line = 1;
     this.col = 1;
@@ -19,10 +30,14 @@ export class Lexer {
   tokenize() {
     this.tokens = [];
     this.errors = [];
+    this.pos = 0;
+    this.line = 1;
+    this.col = 1;
 
     while (this.pos < this.input.length) {
       const char = this.input[this.pos];
 
+      // Newlines
       if (char === '\n') {
         this.line++;
         this.col = 1;
@@ -30,16 +45,58 @@ export class Lexer {
         continue;
       }
 
+      // Whitespace
       if (/\s/.test(char)) {
         this.col++;
         this.pos++;
         continue;
       }
 
-      // Single-line comments
+      // Single-line comments: // ...
       if (char === '/' && this.input[this.pos + 1] === '/') {
         while (this.pos < this.input.length && this.input[this.pos] !== '\n') {
           this.pos++;
+        }
+        continue;
+      }
+
+      // Block comments: /* ... */
+      if (char === '/' && this.input[this.pos + 1] === '*') {
+        const startLine = this.line;
+        const startCol = this.col;
+        this.pos += 2;
+        this.col += 2;
+        let closed = false;
+        while (this.pos < this.input.length) {
+          if (this.input[this.pos] === '*' && this.input[this.pos + 1] === '/') {
+            this.pos += 2;
+            this.col += 2;
+            closed = true;
+            break;
+          }
+          if (this.input[this.pos] === '\n') {
+            this.line++;
+            this.col = 1;
+            this.pos++;
+          } else {
+            this.pos++;
+            this.col++;
+          }
+        }
+        if (!closed) {
+          this.errors.push({
+            code: 'E_UNCLOSED_COMMENT',
+            severity: 'error',
+            type: 'error',
+            line: startLine,
+            col: startCol,
+            endLine: this.line,
+            endCol: this.col,
+            range: { startLine, startCol, endLine: this.line, endCol: this.col },
+            message: 'Lexical Error: Unclosed block comment',
+            explanation: 'A block comment was opened with "/*" but was never closed with "*/".',
+            suggestion: 'Add "*/" at the end of the comment.',
+          });
         }
         continue;
       }
@@ -58,11 +115,19 @@ export class Lexer {
           this.col++;
         }
 
-        const keywords = ['circuit', 'input', 'output', 'wire', 'Wire'];
-        const type = keywords.includes(value)
+        const type = KEYWORDS.has(value)
           ? TOKEN_TYPES.KEYWORD
           : TOKEN_TYPES.IDENTIFIER;
-        this.tokens.push({ type, value, line: startLine, col: startCol });
+
+        this.tokens.push({
+          type,
+          value,
+          line: startLine,
+          col: startCol,
+          endLine: startLine,
+          endCol: this.col,
+          range: { startLine, startCol, endLine: startLine, endCol: this.col },
+        });
         continue;
       }
 
@@ -79,11 +144,16 @@ export class Lexer {
           this.pos++;
           this.col++;
         }
+        const numVal = parseInt(value, 10);
         this.tokens.push({
           type: TOKEN_TYPES.NUMBER,
-          value: parseInt(value, 10),
+          value: numVal,
+          rawValue: value,
           line: startLine,
           col: startCol,
+          endLine: startLine,
+          endCol: this.col,
+          range: { startLine, startCol, endLine: startLine, endCol: this.col },
         });
         continue;
       }
@@ -95,17 +165,30 @@ export class Lexer {
           value: char,
           line: this.line,
           col: this.col,
+          endLine: this.line,
+          endCol: this.col + 1,
+          range: { startLine: this.line, startCol: this.col, endLine: this.line, endCol: this.col + 1 },
         });
         this.pos++;
         this.col++;
         continue;
       }
 
+      // Illegal character
+      const errLine = this.line;
+      const errCol = this.col;
       this.errors.push({
+        code: 'E_ILLEGAL_CHAR',
+        severity: 'error',
         type: 'error',
-        line: this.line,
-        col: this.col,
+        line: errLine,
+        col: errCol,
+        endLine: errLine,
+        endCol: errCol + 1,
+        range: { startLine: errLine, startCol: errCol, endLine: errLine, endCol: errCol + 1 },
         message: `Lexical Error: Unexpected illegal character '${char}'`,
+        explanation: `The character '${char}' is not recognized in CircuitDSL syntax.`,
+        suggestion: `Remove or replace '${char}'.`,
       });
       this.pos++;
       this.col++;
@@ -116,7 +199,11 @@ export class Lexer {
       value: null,
       line: this.line,
       col: this.col,
+      endLine: this.line,
+      endCol: this.col,
+      range: { startLine: this.line, startCol: this.col, endLine: this.line, endCol: this.col },
     });
+
     return { tokens: this.tokens, errors: this.errors };
   }
 }

@@ -4,7 +4,7 @@ import { ASTParser } from '../compiler/ASTParser.js';
 import { SemanticAnalyzer } from '../compiler/SemanticAnalyzer.js';
 import { IRBuilder } from '../compiler/IRBuilder.js';
 import { OptimizationEngine } from '../compiler/OptimizationEngine.js';
-import { evaluateCircuitIR } from '../compiler/Evaluator.js';
+import { CircuitSimulator } from '../compiler/Evaluator.js';
 import { generateVerilog } from '../compiler/VerilogGenerator.js';
 
 describe('Baseline Defects Reproduction (D1 - D11)', () => {
@@ -158,4 +158,117 @@ describe('Baseline Defects Reproduction (D1 - D11)', () => {
     expect(typoError).toBeDefined();
     expect(allDiag.length).toBeLessThan(4); // No cascading errors
   });
+
+  // D5: DFF real sequential semantics
+  test('D5: DFF steps state on positive clock edge', () => {
+    const dsl = `
+      circuit DFFDemo {
+        input d: Wire;
+        input clk: Wire;
+        output q: Wire;
+        q = DFF(d, clk);
+      }
+    `;
+    const lexer = new Lexer(dsl);
+    const { tokens } = lexer.tokenize();
+    const parser = new ASTParser(tokens);
+    const { ast } = parser.parse();
+    const rawIR = IRBuilder.buildIR(ast);
+    const sim = new CircuitSimulator(rawIR, ast);
+
+    // Initial state before clock posedge: q should be 0
+    let state = sim.step({ d: 1, clk: 0 });
+    expect(state.q).toBe(0);
+
+    // Clock posedge (clk: 0 -> 1): q captures d = 1
+    state = sim.step({ d: 1, clk: 1 });
+    expect(state.q).toBe(1);
+
+    // d drops to 0, but clock stays 1: q remains 1
+    state = sim.step({ d: 0, clk: 1 });
+    expect(state.q).toBe(1);
+
+    // Clock goes low: q remains 1
+    state = sim.step({ d: 0, clk: 0 });
+    expect(state.q).toBe(1);
+
+    // Next posedge captures d = 0: q becomes 0
+    state = sim.step({ d: 0, clk: 1 });
+    expect(state.q).toBe(0);
+  });
+
+  // D7: Arity, bus bounds, and non-binary constants
+  test('D7: Arity checking, bus bounds, and non-binary constant detection', () => {
+    const dsl = `
+      circuit ErrorsDemo {
+        input a[4]: Wire;
+        input b: Wire;
+        output y: Wire;
+        y = NOT(a[0], b); // arity error
+        wire bad_idx: Wire;
+        bad_idx = a[4]; // out of bounds (width 4 -> 0..3)
+        wire bad_num: Wire;
+        bad_num = 2; // non-binary literal
+      }
+    `;
+    const lexer = new Lexer(dsl);
+    const { tokens } = lexer.tokenize();
+    const parser = new ASTParser(tokens);
+    const { ast } = parser.parse();
+    const diagnostics = SemanticAnalyzer.analyze(ast);
+
+    expect(diagnostics.some((d) => d.message.includes('NOT') && d.message.includes('expects'))).toBe(true);
+    expect(diagnostics.some((d) => d.message.includes('Bus index \'4\' out of bounds'))).toBe(true);
+    expect(diagnostics.some((d) => d.message.includes('Invalid constant literal \'2\''))).toBe(true);
+  });
+
+  // D8: Source positions carried on AST and diagnostics
+  test('D8: Diagnostic retains accurate source position and range', () => {
+    const dsl = `circuit LocDemo {\n  input a: Wire;\n  output y: Wire;\n  y = UNDEF_SIG;\n}`;
+    const lexer = new Lexer(dsl);
+    const { tokens } = lexer.tokenize();
+    const parser = new ASTParser(tokens);
+    const { ast } = parser.parse();
+    const diagnostics = SemanticAnalyzer.analyze(ast);
+
+    const undefDiag = diagnostics.find((d) => d.message.includes('UNDEF_SIG'));
+    expect(undefDiag).toBeDefined();
+    expect(undefDiag.line).toBe(4);
+    expect(undefDiag.col).toBe(7);
+  });
+
+  // D9: Block comments and missing semicolon auto-fix
+  test('D9: Block comments supported and missing semicolon generates auto-fix', () => {
+    const dsl = `/* Header comment */\ncircuit BlockCommentDemo {\n  input a: Wire\n  output y: Wire;\n  y = NOT(a);\n}`;
+    const lexer = new Lexer(dsl);
+    const { tokens, errors } = lexer.tokenize();
+    expect(errors.length).toBe(0);
+
+    const parser = new ASTParser(tokens);
+    const { diagnostics } = parser.parse();
+
+    const missingSemi = diagnostics.find((d) => d.code === 'W_MISSING_SEMICOLON');
+    expect(missingSemi).toBeDefined();
+    expect(missingSemi.fix?.replacement).toBe(';');
+  });
+
+  // D11: Optional Wire type syntax
+  test('D11: Wire type is optional in declarations', () => {
+    const dsl = `
+      circuit OptionalWireDemo {
+        input a;
+        output y;
+        y = NOT(a);
+      }
+    `;
+    const lexer = new Lexer(dsl);
+    const { tokens } = lexer.tokenize();
+    const parser = new ASTParser(tokens);
+    const { ast, diagnostics } = parser.parse();
+
+    expect(diagnostics.filter((d) => d.severity === 'error').length).toBe(0);
+    expect(ast.inputs.length).toBe(1);
+    expect(ast.outputs.length).toBe(1);
+  });
 });
+

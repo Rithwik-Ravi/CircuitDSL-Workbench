@@ -73,7 +73,7 @@ describe('CircuitDSL Compiler Pipeline Tests', () => {
     const { ast } = parser.parse();
     const rawIR = IRBuilder.buildIR(ast);
 
-    const { optimizedIR, stats } = OptimizationEngine.optimize(rawIR, ast);
+    const { stats } = OptimizationEngine.optimize(rawIR, ast);
     expect(stats.initialGateCount).toBe(5);
     expect(stats.optimizedGateCount).toBe(2);
     expect(stats.reductionPct).toBe(60);
