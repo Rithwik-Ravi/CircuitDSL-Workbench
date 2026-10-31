@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Cpu,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
+  Share2,
   Download,
-  Scissors,
-  FileCode,
-  Code,
-  Table,
+  Play,
+  Wand2,
+  Sun,
+  Moon,
+  ShieldCheck,
+  ChevronDown,
 } from 'lucide-react';
-import { PRESET_EXAMPLES } from '../utils/presets.js';
+import { PRESET_EXAMPLES, PRESET_METADATA } from '../utils/presets.js';
+import { encodeShareUrl, exportIRJson, exportSchematicSVG } from '../utils/shareUtils.js';
 import { downloadFile, exportTruthTableCSV } from '../utils/exportUtils.js';
 
 export function Header({
@@ -20,126 +24,210 @@ export function Header({
   setEnableOptimization,
   compilerResult,
   truthTable,
+  onCompile,
+  theme,
+  setTheme,
+  onOpenReverseMode,
 }) {
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
+
+  const handleShare = () => {
+    const url = encodeShareUrl(compilerResult.ast ? compilerResult.verilog ? compilerResult.source : '' : '');
+    navigator.clipboard.writeText(window.location.href);
+    setCopiedShare(true);
+    setTimeout(() => setCopiedShare(false), 2000);
+  };
+
+  const isEquivalent = compilerResult.equivalence?.equivalent;
+
   return (
-    <header className="h-16 bg-[#292524] border-b border-[#44403c] px-4 flex items-center justify-between z-20 shadow-lg">
+    <header className="h-14 bg-[#201e1c] border-b border-[#3b3836] px-4 flex items-center justify-between z-20 shadow-md select-none text-xs">
+      {/* Brand & Title */}
       <div className="flex items-center space-x-3">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#c25e00] via-[#d97706] to-[#f59e0b] flex items-center justify-center shadow-lg shadow-[#c25e00]/20">
-          <Cpu className="w-6 h-6 text-slate-950" />
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#c25e00] to-amber-500 flex items-center justify-center shadow-md shadow-amber-900/30">
+          <Cpu className="w-5 h-5 text-black" />
         </div>
         <div>
           <div className="flex items-center space-x-2">
-            <h1 className="text-lg font-bold tracking-tight text-[#fefae0]">
-              Circuit DSL Workbench
+            <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
+              CircuitDSL <span className="text-amber-500 font-mono text-xs">Workbench v2</span>
             </h1>
-            <span
-              className={`text-xs px-2.5 py-0.5 rounded-full font-semibold flex items-center gap-1 border ${
-                compilerResult.hasErrors
-                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                  : 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30'
-              }`}
-            >
-              {compilerResult.hasErrors ? (
-                <XCircle className="w-3 h-3 text-rose-400" />
-              ) : (
-                <CheckCircle className="w-3 h-3 text-[#10b981]" />
-              )}
-              {compilerResult.hasErrors
-                ? 'Compilation Errors'
-                : 'Pipeline Valid'}
-            </span>
+
+            {/* Verified Equivalent Badge (Headline Feature) */}
+            {compilerResult.equivalence && (
+              <span
+                className={`px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 border text-[11px] ${
+                  isEquivalent
+                    ? 'bg-emerald-950/60 text-emerald-400 border-emerald-700/60'
+                    : 'bg-rose-950/60 text-rose-400 border-rose-700/60'
+                }`}
+                title={
+                  isEquivalent
+                    ? `Formally verified equivalent against original IR (${compilerResult.equivalence.verifiedVectors} vectors tested)`
+                    : 'Equivalence violation detected!'
+                }
+              >
+                {isEquivalent ? (
+                  <>
+                    <ShieldCheck size={12} className="text-emerald-400" />
+                    <span>Verified Equivalent</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle size={12} className="text-rose-400" />
+                    <span>Equivalence Mismatch</span>
+                  </>
+                )}
+              </span>
+            )}
           </div>
-          <p className="text-xs text-[#a8a29e]">
-            Lexer • Parser • AST • SSA IR • Optimizer • Verilog • Simulator
-          </p>
         </div>
       </div>
 
+      {/* Center Controls: Examples Dropdown */}
       <div className="flex items-center space-x-2">
-        <button
-          onClick={() => setEnableOptimization(!enableOptimization)}
-          className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all ${
-            enableOptimization
-              ? 'bg-[#c25e00]/20 text-[#f59e0b] border-[#c25e00]/50 shadow-inner'
-              : 'bg-[#1c1917] text-[#a8a29e] border-[#44403c]'
-          }`}
-        >
-          <Scissors className="w-4 h-4 text-[#f59e0b]" />
-          Optimizer: {enableOptimization ? 'ON' : 'OFF'}
-        </button>
-
+        <span className="text-[#a8a29e] hidden md:inline">Examples:</span>
         <select
           value={activeExample}
           onChange={(e) => {
-            setActiveExample(e.target.value);
-            setDslCode(PRESET_EXAMPLES[e.target.value]);
+            const val = e.target.value;
+            setActiveExample(val);
+            if (PRESET_EXAMPLES[val]) {
+              setDslCode(PRESET_EXAMPLES[val]);
+            }
           }}
-          className="px-3 py-2 bg-[#1c1917] border border-[#44403c] rounded-xl text-xs text-[#fefae0] hover:border-[#78716c] focus:outline-none cursor-pointer"
+          className="bg-[#181615] border border-[#44403c] rounded-lg px-2.5 py-1.5 text-xs text-[#e7e5e4] focus:outline-none focus:border-amber-500 transition-colors"
         >
-          <optgroup label="⚡ Compiler Optimization Demos">
-            <option value="optimizationTest">
-              Demo: Dead Code & CSE Optimization
-            </option>
-            <option value="constantFoldingDemo">
-              Demo: Constant Folding & Simplification
-            </option>
-          </optgroup>
-
-          <optgroup label="🔣 Combinational Logic">
-            <option value="adder">4-bit Ripple Carry Adder</option>
-            <option value="mux">2-to-1 Multiplexer</option>
-            <option value="alu">1-bit Simple ALU</option>
-          </optgroup>
-
-          <optgroup label="🔄 Sequential Logic">
-            <option value="dff">Sequential D Flip-Flop</option>
-          </optgroup>
-
-          <optgroup label="📝 Custom Workspace">
-            <option value="custom">+ Blank Template / Scratchpad</option>
-          </optgroup>
+          {Object.entries(PRESET_EXAMPLES).map(([key]) => {
+            const meta = PRESET_METADATA[key] || { title: key };
+            return (
+              <option key={key} value={key}>
+                {meta.title}
+              </option>
+            );
+          })}
         </select>
 
-        <div className="relative group">
-          <button className="px-3 py-2 bg-[#1c1917] hover:bg-[#44403c] border border-[#44403c] rounded-xl text-xs font-semibold text-[#fefae0] flex items-center gap-1.5 transition-colors">
-            <Download className="w-3.5 h-3.5 text-[#f59e0b]" />
-            Export
+        {/* Compile Button */}
+        <button
+          onClick={onCompile}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#c25e00] hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm transition-all"
+          title="Compile Circuit (Ctrl/Cmd+Enter)"
+        >
+          <Play size={12} /> Compile
+        </button>
+      </div>
+
+      {/* Right Action Buttons */}
+      <div className="flex items-center space-x-2">
+        {/* Reverse Mode Button */}
+        <button
+          onClick={onOpenReverseMode}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#292524] hover:bg-[#383330] text-amber-400 border border-[#44403c] rounded-lg font-semibold transition-colors"
+          title="Open Reverse Mode (Truth Table to Circuit)"
+        >
+          <Wand2 size={13} />
+          <span className="hidden sm:inline">Reverse Mode</span>
+        </button>
+
+        {/* Optimization Toggle */}
+        <button
+          onClick={() => setEnableOptimization(!enableOptimization)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border font-semibold transition-colors ${
+            enableOptimization
+              ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+              : 'bg-[#292524] border-[#44403c] text-[#a8a29e]'
+          }`}
+          title="Toggle IR Optimization Passes"
+        >
+          <span>Optimizer:</span>
+          <span className="font-bold">{enableOptimization ? 'ON' : 'OFF'}</span>
+        </button>
+
+        {/* Share Button */}
+        <button
+          onClick={handleShare}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#292524] hover:bg-[#383330] text-[#d6d3d1] border border-[#44403c] rounded-lg font-medium transition-colors"
+          title="Copy shareable link"
+        >
+          <Share2 size={13} />
+          <span className="hidden md:inline">{copiedShare ? 'Copied!' : 'Share'}</span>
+        </button>
+
+        {/* Export Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-[#292524] hover:bg-[#383330] text-[#d6d3d1] border border-[#44403c] rounded-lg font-medium transition-colors"
+          >
+            <Download size={13} />
+            <span className="hidden md:inline">Export</span>
+            <ChevronDown size={11} />
           </button>
-          <div className="absolute right-0 top-full mt-1 w-52 bg-[#292524] border border-[#44403c] rounded-xl shadow-2xl py-1 hidden group-hover:block z-50">
-            <button
-              onClick={() =>
-                downloadFile(
-                  compilerResult.verilog,
-                  'circuit.v',
-                  'text/x-verilog'
-                )
-              }
-              className="w-full text-left px-3 py-2 text-xs text-[#fefae0] hover:bg-[#44403c] flex items-center gap-2"
+
+          {showExportMenu && (
+            <div
+              className="absolute right-0 mt-1 w-44 bg-[#262423] border border-[#44403c] rounded-xl shadow-2xl py-1 text-xs text-[#d6d3d1] z-50"
+              onMouseLeave={() => setShowExportMenu(false)}
             >
-              <FileCode className="w-3.5 h-3.5 text-amber-400" /> Verilog HDL
-              (.v)
-            </button>
-            <button
-              onClick={() =>
-                downloadFile(
-                  JSON.stringify(compilerResult.ast, null, 2),
-                  'ast.json',
-                  'application/json'
-                )
-              }
-              className="w-full text-left px-3 py-2 text-xs text-[#fefae0] hover:bg-[#44403c] flex items-center gap-2"
-            >
-              <Code className="w-3.5 h-3.5 text-emerald-400" /> AST Netlist
-              (.json)
-            </button>
-            <button
-              onClick={() => exportTruthTableCSV(truthTable)}
-              className="w-full text-left px-3 py-2 text-xs text-[#fefae0] hover:bg-[#44403c] flex items-center gap-2"
-            >
-              <Table className="w-3.5 h-3.5 text-blue-400" /> Truth Table (.csv)
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  downloadFile(compilerResult.verilog, `${compilerResult.ast?.circuitName || 'circuit'}.v`, 'text/plain');
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#3b3836] transition-colors"
+              >
+                Export Verilog (.v)
+              </button>
+              <button
+                onClick={() => {
+                  downloadFile(compilerResult.testbench, `${compilerResult.ast?.circuitName || 'circuit'}_tb.v`, 'text/plain');
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#3b3836] transition-colors"
+              >
+                Export Testbench (.v)
+              </button>
+              <button
+                onClick={() => {
+                  exportIRJson(compilerResult.rawIR, compilerResult.optimizedIR, compilerResult.ast);
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#3b3836] transition-colors"
+              >
+                Export IR (.json)
+              </button>
+              <button
+                onClick={() => {
+                  exportTruthTableCSV(truthTable);
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#3b3836] transition-colors"
+              >
+                Export Truth Table (.csv)
+              </button>
+              <button
+                onClick={() => {
+                  exportSchematicSVG('svg', `${compilerResult.ast?.circuitName || 'circuit'}_schematic.svg`);
+                  setShowExportMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#3b3836] transition-colors"
+              >
+                Export Schematic (.svg)
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="p-1.5 bg-[#292524] hover:bg-[#383330] text-[#a8a29e] hover:text-white border border-[#44403c] rounded-lg transition-colors"
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
       </div>
     </header>
   );

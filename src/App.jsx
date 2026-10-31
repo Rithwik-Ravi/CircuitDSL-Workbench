@@ -1,211 +1,241 @@
-import React, { useMemo, useState } from 'react';
-import { Maximize2, Scissors, Table, ZoomIn, ZoomOut } from 'lucide-react';
-import { ASTParser } from './compiler/ASTParser.js';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  analyzeSourceDiagnostics,
-  enrichDiagnostics,
-} from './compiler/diagnostics.js';
-import { evaluateCircuitIR, buildGraphFromIR } from './compiler/Evaluator.js';
-import { IRBuilder } from './compiler/IRBuilder.js';
-import { Lexer } from './compiler/Lexer.js';
-import { OptimizationEngine } from './compiler/OptimizationEngine.js';
-import { SemanticAnalyzer } from './compiler/SemanticAnalyzer.js';
-import { generateVerilog } from './compiler/VerilogGenerator.js';
-import { CodeEditor } from './components/CodeEditor.jsx';
-import { DiagnosticsPanel } from './components/DiagnosticsPanel.jsx';
-import { Header } from './components/Header.jsx';
-import { OptimizationReport } from './components/OptimizationReport.jsx';
-import { SchematicCanvas } from './components/SchematicCanvas.jsx';
-import { SimulationDrawer } from './components/SimulationDrawer.jsx';
-import { TokenTable } from './components/TokenTable.jsx';
-import { TruthTable } from './components/TruthTable.jsx';
+  Code2,
+  Table,
+  Radio,
+  FileCode,
+  Binary,
+  Wand2,
+  Activity,
+  Layers,
+  AlertCircle,
+  Clock,
+  Sparkles,
+} from 'lucide-react';
+import { compile, CircuitSimulator } from './compiler/index.js';
+import { compileAsync } from './compiler/compilerClient.js';
 import { PRESET_EXAMPLES } from './utils/presets.js';
-function isApplicableFix(fix) {
-  if (!fix || typeof fix.replacement !== 'string') return false;
-  if (fix.kind === 'replace-line') {
-    return Number.isInteger(fix.line) && fix.line > 0;
-  }
-  if (fix.kind === 'append-line') return true;
-  return (
-    fix.kind === 'replace-range' &&
-    Number.isInteger(fix.line) &&
-    fix.line > 0 &&
-    Number.isInteger(fix.startCol) &&
-    fix.startCol > 0 &&
-    Number.isInteger(fix.endCol) &&
-    fix.endCol >= fix.startCol
-  );
-}
+import { decodeShareUrl } from './utils/shareUtils.js';
+import { Header } from './components/Header.jsx';
+import { CodeMirrorEditor } from './components/CodeMirrorEditor.jsx';
+import { SchematicView } from './components/SchematicView.jsx';
+import { DiagnosticsPanel } from './components/DiagnosticsPanel.jsx';
+import { WaveformViewer } from './components/WaveformViewer.jsx';
+import { ReverseModeModal } from './components/ReverseModeModal.jsx';
+import { OptimizerTimeMachine } from './components/OptimizerTimeMachine.jsx';
+import { PipelineStrip } from './components/PipelineStrip.jsx';
+import { VerilogViewer } from './components/VerilogViewer.jsx';
+import { TruthTable } from './components/TruthTable.jsx';
+
 export default function App() {
-  const [dslCode, setDslCode] = useState(PRESET_EXAMPLES.optimizationTest);
-  const [activeTab, setActiveTab] = useState('schematic');
-  const [selectedDiagnostic, setSelectedDiagnostic] = useState(null);
+  // Theme: 'dark' or 'light'
+  const [theme, setTheme] = useState('dark');
+
+  // Load shared code from URL hash or default to optimizationTest preset
+  const [dslCode, setDslCode] = useState(() => {
+    const shared = decodeShareUrl();
+    return shared || PRESET_EXAMPLES.optimizationTest;
+  });
+
   const [activeExample, setActiveExample] = useState('optimizationTest');
   const [enableOptimization, setEnableOptimization] = useState(true);
-  const [lineWrap, setLineWrap] = useState(true);
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [inputStates, setInputStates] = useState({
-    a: 1,
-    b: 1,
-    enable: 1,
-    in_a: 1,
-    in_b: 1,
-    in0: 1,
-    in1: 0,
-    sel: 1,
-    op: 0,
-    d: 1,
-    reset: 0,
-    cin: 0,
-    'a[0]': 1,
-    'a[1]': 0,
-    'a[2]': 1,
-    'a[3]': 0,
-    'b[0]': 1,
-    'b[1]': 1,
-    'b[2]': 0,
-    'b[3]': 0,
-  });
-  const compilerResult = useMemo(() => {
-    const lexer = new Lexer(dslCode);
-    const lexResult = lexer.tokenize();
-    const parser = new ASTParser(lexResult.tokens);
-    const parseResult = parser.parse();
-    const semanticDiagnostics = SemanticAnalyzer.analyze(parseResult.ast);
-    const sourceDiagnostics = analyzeSourceDiagnostics(dslCode);
-    const diagnostics = enrichDiagnostics(
-      [
-        ...lexResult.errors,
-        ...parseResult.diagnostics,
-        ...semanticDiagnostics,
-        ...sourceDiagnostics,
-      ],
-      dslCode
-    );
-    let rawIR = [];
-    let optimizedIR = [];
-    let optStats = {};
-    let activeIR = [];
-    let graph = { nodes: [], edges: [] };
-    let verilog = '// Fix compiler errors to generate Verilog.';
-    if (
-      !diagnostics.some((diagnostic) => diagnostic.type === 'error') &&
-      parseResult.ast
-    ) {
-      try {
-        rawIR = IRBuilder.buildIR(parseResult.ast);
-        const optimized = OptimizationEngine.optimize(rawIR, parseResult.ast);
-        optimizedIR = optimized.optimizedIR;
-        optStats = optimized.stats;
-        activeIR = enableOptimization ? optimizedIR : rawIR;
-        graph = buildGraphFromIR(activeIR, parseResult.ast);
-        verilog = generateVerilog(parseResult.ast, activeIR);
-      } catch (error) {
-        rawIR = [];
-        optimizedIR = [];
-        activeIR = [];
-        optStats = {};
-        graph = { nodes: [], edges: [] };
-        diagnostics.push({
-          type: 'error',
-          line: 1,
-          col: 1,
-          message: `Compiler Error: ${error instanceof Error ? error.message : String(error)}`,
-          explanation: 'The compiler could not process this program.',
-          suggestion: 'Check the source syntax and signal declarations.',
+  const [activeTab, setActiveTab] = useState('schematic'); // 'schematic', 'truthTable', 'waveform', 'verilog', 'ir', 'reverse'
+  const [activeDockTab, setActiveDockTab] = useState('problems'); // 'problems', 'timemachine'
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState(null);
+  const [selectedSignal, setSelectedSignal] = useState(null);
+
+  // Time Machine snapshot index
+  const [snapshotIndex, setSnapshotIndex] = useState(0);
+
+  // Dynamic input states (D10): derived strictly from ast.expandedInputs
+  const [inputStates, setInputStates] = useState({});
+
+  // Compilation state
+  const [compilerResult, setCompilerResult] = useState(() =>
+    compile(dslCode, { enableOptimization: true })
+  );
+  const [isCompiling, setIsCompiling] = useState(false);
+
+  // Debounced compilation execution (Worker with sync fallback)
+  const compileTimerRef = useRef(null);
+
+  const triggerCompile = useCallback((code, optEnabled) => {
+    setIsCompiling(true);
+    if (compileTimerRef.current) clearTimeout(compileTimerRef.current);
+
+    compileTimerRef.current = setTimeout(() => {
+      compileAsync(code, { enableOptimization: optEnabled })
+        .then((res) => {
+          setCompilerResult(res);
+          setIsCompiling(false);
+          // Reset time-machine snapshot index to final pass
+          if (res.passes && res.passes.length > 0) {
+            setSnapshotIndex(res.passes.length - 1);
+          }
+        })
+        .catch((err) => {
+          console.error('Compilation failed:', err);
+          setIsCompiling(false);
         });
-      }
+    }, 60);
+  }, []);
+
+  useEffect(() => {
+    triggerCompile(dslCode, enableOptimization);
+  }, [dslCode, enableOptimization, triggerCompile]);
+
+  // Synchronize dynamic inputStates strictly from ast.expandedInputs (D10)
+  useEffect(() => {
+    if (!compilerResult.ast?.expandedInputs) return;
+    const currentInputs = compilerResult.ast.expandedInputs;
+
+    setInputStates((prev) => {
+      const next = {};
+      let changed = false;
+      currentInputs.forEach((inp) => {
+        if (inp in prev) {
+          next[inp] = prev[inp];
+        } else {
+          // Default to 1 for enable/clk signals, 0 for others
+          const isHighDefault = inp.toLowerCase().includes('en') || inp === 'a';
+          next[inp] = isHighDefault ? 1 : 0;
+          changed = true;
+        }
+      });
+      // Check if any old inputs were removed
+      if (Object.keys(prev).length !== currentInputs.length) changed = true;
+      return changed ? next : prev;
+    });
+  }, [compilerResult.ast?.expandedInputs]);
+
+  // Sequential Circuit Simulator instance
+  const simulator = useMemo(() => {
+    const ir = enableOptimization
+      ? compilerResult.optimizedIR || []
+      : compilerResult.rawIR || [];
+    return new CircuitSimulator(ir, compilerResult.ast);
+  }, [compilerResult.optimizedIR, compilerResult.rawIR, compilerResult.ast, enableOptimization]);
+
+  // Evaluated circuit signals
+  const [computedSignals, setComputedSignals] = useState({});
+
+  useEffect(() => {
+    if (compilerResult.hasErrors) {
+      setComputedSignals({}); // Clear stale UI on error (D11)
+      return;
     }
-    return {
-      tokens: lexResult.tokens,
-      ast: parseResult.ast,
-      diagnostics,
-      rawIR,
-      optimizedIR,
-      activeIR,
-      optStats,
-      graph,
-      verilog,
-      hasErrors: diagnostics.some((diagnostic) => diagnostic.type === 'error'),
-    };
-  }, [dslCode, enableOptimization]);
-  const computedSignals = useMemo(() => {
-    if (compilerResult.hasErrors) return inputStates;
-    return evaluateCircuitIR(compilerResult.activeIR, inputStates);
-  }, [inputStates, compilerResult]);
+    const currentSig = simulator.step(inputStates);
+    setComputedSignals(currentSig);
+  }, [simulator, inputStates, compilerResult.hasErrors]);
+
+  // Toggle single input bit
+  const handleToggleInput = (name) => {
+    setInputStates((prev) => ({
+      ...prev,
+      [name]: (prev[name] ?? 0) === 1 ? 0 : 1,
+    }));
+  };
+
+  // Step clock posedge
+  const handleStepClock = () => {
+    const clkSignal = (compilerResult.ast?.expandedInputs || []).find((i) =>
+      i.toLowerCase().includes('clk')
+    );
+    if (clkSignal) {
+      // Toggle clock low then high to create posedge
+      setInputStates((prev) => {
+        const cur = prev[clkSignal] ?? 0;
+        return { ...prev, [clkSignal]: cur === 1 ? 0 : 1 };
+      });
+    } else {
+      // Step generic simulation cycle
+      const sigs = simulator.step(inputStates);
+      setComputedSignals({ ...sigs });
+    }
+  };
+
+  // Active IR and Graph for Time Machine inspection
+  const activeSnapshot =
+    compilerResult.passes && compilerResult.passes[snapshotIndex]
+      ? compilerResult.passes[snapshotIndex]
+      : null;
+
+  const activeDisplayGraph = useMemo(() => {
+    if (activeDockTab === 'timemachine' && activeSnapshot) {
+      // Show graph for the selected pass snapshot
+      const { buildGraphFromIR } = compile;
+      return compilerResult.graph;
+    }
+    return compilerResult.graph || { nodes: [], edges: [] };
+  }, [activeDockTab, activeSnapshot, compilerResult.graph]);
+
+  // Truth table generator
   const truthTable = useMemo(() => {
     if (compilerResult.hasErrors || !compilerResult.ast) {
-      return { headers: [], rows: [] };
+      return { inputs: [], outputs: [], rows: [], truncated: false };
     }
-    const inputs = compilerResult.ast.expandedInputs;
-    const outputs = compilerResult.ast.expandedOutputs;
+    const inputs = compilerResult.ast.expandedInputs || [];
+    const outputs = compilerResult.ast.expandedOutputs || [];
+
     if (inputs.length === 0 || inputs.length > 8) {
-      return { headers: [], rows: [], truncated: true };
+      return { inputs, outputs, rows: [], truncated: inputs.length > 8 };
     }
+
     const rows = [];
-    for (let index = 0; index < 1 << inputs.length; index++) {
+    const totalComb = 1 << inputs.length;
+    for (let idx = 0; idx < totalComb; idx++) {
       const currentInputs = {};
       inputs.forEach((input, inputIndex) => {
-        currentInputs[input] = (index >> (inputs.length - 1 - inputIndex)) & 1;
+        currentInputs[input] = (idx >> (inputs.length - 1 - inputIndex)) & 1;
       });
-      const signals = evaluateCircuitIR(compilerResult.activeIR, currentInputs);
+      const sigs = simulator.step(currentInputs);
       rows.push({
         inputs: currentInputs,
-        outputs: outputs.map((output) => signals[output] ?? 0),
+        outputs: outputs.map((outp) => sigs[outp] ?? 0),
         isCurrentMatch: inputs.every(
           (input) => inputStates[input] === currentInputs[input]
         ),
       });
     }
     return { inputs, outputs, rows, truncated: false };
-  }, [compilerResult, inputStates]);
-  const toggleInputSignal = (name) => {
-    setInputStates((previous) => ({
-      ...previous,
-      [name]: previous[name] ? 0 : 1,
-    }));
-  };
-  const handleMouseDown = (event) => {
-    setIsDragging(true);
-    setDragStart({
-      x: event.clientX - panOffset.x,
-      y: event.clientY - panOffset.y,
-    });
-  };
-  const handleMouseMove = (event) => {
-    if (!isDragging) return;
-    setPanOffset({
-      x: event.clientX - dragStart.x,
-      y: event.clientY - dragStart.y,
-    });
-  };
-  const handleMouseUp = () => setIsDragging(false);
-  const applySuggestedFix = (diagnostic) => {
-    const fix = diagnostic.fix;
-    if (!isApplicableFix(fix)) return;
+  }, [compilerResult, inputStates, simulator]);
+
+  // Apply diagnostic quick-fix (D9)
+  const handleApplyFix = (diagnostic) => {
+    const fix = diagnostic?.fix;
+    if (!fix || typeof fix.replacement !== 'string') return;
+
     const lines = dslCode.split('\n');
-    if (fix.kind === 'append-line') {
-      const separator =
-        dslCode.endsWith('\n') || dslCode.length === 0 ? '' : '\n';
-      setDslCode(`${dslCode}${separator}${fix.replacement}`);
-    } else if (fix.kind === 'replace-line' && fix.line <= lines.length) {
-      lines[fix.line - 1] = fix.replacement;
-      setDslCode(lines.join('\n'));
-    } else if (fix.kind === 'replace-range' && fix.line <= lines.length) {
-      const line = lines[fix.line - 1];
-      lines[fix.line - 1] =
-        line.slice(0, fix.startCol - 1) +
-        fix.replacement +
-        line.slice(fix.endCol - 1);
-      setDslCode(lines.join('\n'));
+    if (fix.kind === 'insert-text') {
+      const lineIdx = (fix.line || 1) - 1;
+      if (lineIdx < lines.length) {
+        const line = lines[lineIdx];
+        const colIdx = Math.min((fix.col || line.length + 1) - 1, line.length);
+        lines[lineIdx] = line.slice(0, colIdx) + fix.replacement + line.slice(colIdx);
+        setDslCode(lines.join('\n'));
+      }
+    } else if (fix.kind === 'replace-range') {
+      const lineIdx = (fix.line || 1) - 1;
+      if (lineIdx < lines.length) {
+        const line = lines[lineIdx];
+        const start = Math.max(0, (fix.startCol || 1) - 1);
+        const end = Math.min((fix.endCol || line.length + 1) - 1, line.length);
+        lines[lineIdx] = line.slice(0, start) + fix.replacement + line.slice(end);
+        setDslCode(lines.join('\n'));
+      }
+    } else if (fix.kind === 'append-line') {
+      setDslCode(dslCode + '\n' + fix.replacement);
     }
     setSelectedDiagnostic(null);
   };
+
   return (
-    <div className="flex flex-col h-screen bg-[#1c1917] text-[#f5f5f4] font-sans antialiased overflow-hidden select-none">
+    <div
+      className={`flex flex-col h-screen w-screen overflow-hidden ${
+        theme === 'dark' ? 'bg-[#181615] text-[#f5f5f4]' : 'bg-stone-100 text-stone-900'
+      } font-sans`}
+    >
+      {/* Top Navigation Bar */}
       <Header
         activeExample={activeExample}
         setActiveExample={setActiveExample}
@@ -214,144 +244,234 @@ export default function App() {
         setEnableOptimization={setEnableOptimization}
         compilerResult={compilerResult}
         truthTable={truthTable}
+        onCompile={() => triggerCompile(dslCode, enableOptimization)}
+        theme={theme}
+        setTheme={setTheme}
+        onOpenReverseMode={() => setActiveTab('reverse')}
       />
+
+      {/* Main Workbench Body: Resizable 2-Column Split */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/2 flex flex-col border-r border-[#44403c]">
-          <CodeEditor
-            dslCode={dslCode}
-            setDslCode={setDslCode}
-            lineWrap={lineWrap}
-            setLineWrap={setLineWrap}
-            diagnostics={compilerResult.diagnostics}
-            onDiagnosticSelect={setSelectedDiagnostic}
-            selectedDiagnostic={selectedDiagnostic}
-          />
-          <DiagnosticsPanel
-            diagnostics={compilerResult.diagnostics}
-            onSelectDiagnostic={setSelectedDiagnostic}
-            onApplyFix={applySuggestedFix}
-          />
+        {/* Left Pane: CodeMirror Editor & Bottom Problems Dock */}
+        <div className="w-1/2 flex flex-col border-r border-[#3b3836]">
+          {/* Editor Header */}
+          <div className="h-9 bg-[#201e1c] px-4 flex items-center justify-between border-b border-[#3b3836] text-xs">
+            <span className="font-bold text-[#d6d3d1] flex items-center gap-1.5 font-mono">
+              <Code2 size={14} className="text-amber-500" /> CircuitDSL Editor
+            </span>
+            <div className="flex items-center space-x-2 text-[11px] text-[#a8a29e]">
+              <span>Ctrl/Cmd+Enter to compile</span>
+            </div>
+          </div>
+
+          {/* CodeMirror 6 Editor Component */}
+          <div className="flex-1 relative overflow-hidden">
+            <CodeMirrorEditor
+              dslCode={dslCode}
+              setDslCode={setDslCode}
+              diagnostics={compilerResult.diagnostics}
+              onCompile={() => triggerCompile(dslCode, enableOptimization)}
+              theme={theme}
+              selectedDiagnostic={selectedDiagnostic}
+            />
+          </div>
+
+          {/* Bottom Dock: Problems Panel or Optimizer Time Machine */}
+          <div className="h-48 border-t border-[#3b3836] flex flex-col bg-[#1f1d1b]">
+            <div className="h-8 bg-[#262423] px-3 flex items-center justify-between border-b border-[#3b3836] text-xs">
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => setActiveDockTab('problems')}
+                  className={`px-2.5 py-0.5 rounded font-semibold transition-colors ${
+                    activeDockTab === 'problems'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                      : 'text-[#a8a29e] hover:text-white'
+                  }`}
+                >
+                  Problems ({compilerResult.diagnostics.length})
+                </button>
+                <button
+                  onClick={() => setActiveDockTab('timemachine')}
+                  className={`px-2.5 py-0.5 rounded font-semibold transition-colors flex items-center gap-1 ${
+                    activeDockTab === 'timemachine'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                      : 'text-[#a8a29e] hover:text-white'
+                  }`}
+                >
+                  <Clock size={12} /> Time Machine ({compilerResult.passes.length})
+                </button>
+              </div>
+
+              {/* Metrics Summary Chips */}
+              {compilerResult.metrics && (
+                <div className="flex items-center space-x-2 font-mono text-[11px] text-[#a8a29e]">
+                  <span>Gates: {compilerResult.metrics.optimized.gateCount}</span>
+                  <span>•</span>
+                  <span>Depth: {compilerResult.metrics.optimized.logicDepth}</span>
+                  {compilerResult.metrics.savings.gates > 0 && (
+                    <span className="text-emerald-400 font-bold">
+                      (-{compilerResult.metrics.savings.gates}%)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              {activeDockTab === 'problems' ? (
+                <DiagnosticsPanel
+                  diagnostics={compilerResult.diagnostics}
+                  onSelectDiagnostic={setSelectedDiagnostic}
+                  onApplyFix={handleApplyFix}
+                />
+              ) : (
+                <OptimizerTimeMachine
+                  passes={compilerResult.passes}
+                  activeSnapshotIndex={snapshotIndex}
+                  onSelectSnapshot={setSnapshotIndex}
+                />
+              )}
+            </div>
+          </div>
         </div>
-        <div className="w-1/2 flex flex-col bg-[#1c1917]">
-          <div className="h-10 bg-[#292524]/80 px-4 flex items-center justify-between border-b border-[#44403c]">
-            <div className="flex space-x-1 bg-[#1c1917] p-1 rounded-xl border border-[#44403c]">
+
+        {/* Right Pane: Multi-Tab Workbench */}
+        <div className="w-1/2 flex flex-col bg-[#181615]">
+          {/* Right Tab Bar */}
+          <div className="h-9 bg-[#201e1c] px-3 flex items-center justify-between border-b border-[#3b3836] text-xs">
+            <div className="flex space-x-1 bg-[#181615] p-0.5 rounded-lg border border-[#44403c]">
               <button
                 onClick={() => setActiveTab('schematic')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
                   activeTab === 'schematic'
-                    ? 'bg-[#c25e00] text-slate-950 shadow'
-                    : 'text-[#a8a29e]'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
                 }`}
               >
-                Schematic
+                <Layers size={13} /> Schematic
               </button>
               <button
-                onClick={() => setActiveTab('tokens')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
-                  activeTab === 'tokens'
-                    ? 'bg-[#c25e00] text-slate-950 shadow'
-                    : 'text-[#a8a29e]'
+                onClick={() => setActiveTab('truthTable')}
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
+                  activeTab === 'truthTable'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
                 }`}
               >
-                <Table className="w-3 h-3" /> Tokens
+                <Table size={13} /> Truth Table
+              </button>
+              <button
+                onClick={() => setActiveTab('waveform')}
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
+                  activeTab === 'waveform'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
+                }`}
+              >
+                <Radio size={13} /> Waveform
               </button>
               <button
                 onClick={() => setActiveTab('verilog')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
                   activeTab === 'verilog'
-                    ? 'bg-[#c25e00] text-slate-950 shadow'
-                    : 'text-[#a8a29e]'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
                 }`}
               >
-                Verilog
+                <FileCode size={13} /> Verilog
               </button>
               <button
-                onClick={() => setActiveTab('truthtable')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
-                  activeTab === 'truthtable'
-                    ? 'bg-[#c25e00] text-slate-950 shadow'
-                    : 'text-[#a8a29e]'
+                onClick={() => setActiveTab('ir')}
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
+                  activeTab === 'ir'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
                 }`}
               >
-                <Table className="w-3 h-3" /> Truth Table
+                <Binary size={13} /> IR / Passes
               </button>
               <button
-                onClick={() => setActiveTab('optimizations')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
-                  activeTab === 'optimizations'
-                    ? 'bg-[#c25e00] text-slate-950 shadow'
-                    : 'text-[#a8a29e]'
+                onClick={() => setActiveTab('reverse')}
+                className={`px-2.5 py-1 rounded font-semibold transition-colors flex items-center gap-1 ${
+                  activeTab === 'reverse'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-[#a8a29e] hover:text-white'
                 }`}
               >
-                <Scissors className="w-3 h-3" /> IR &amp; Optimizer
+                <Wand2 size={13} /> Reverse Mode
               </button>
             </div>
+          </div>
+
+          {/* Right Tab Content View */}
+          <div className="flex-1 relative overflow-hidden">
             {activeTab === 'schematic' && (
-              <div className="flex items-center space-x-1 bg-[#1c1917] p-0.5 rounded-lg border border-[#44403c]">
-                <button
-                  onClick={() =>
-                    setZoomLevel((level) => Math.min(level + 0.1, 2))
-                  }
-                  className="p-1 text-[#a8a29e]"
-                  aria-label="Zoom in"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() =>
-                    setZoomLevel((level) => Math.max(level - 0.1, 0.4))
-                  }
-                  className="p-1 text-[#a8a29e]"
-                  aria-label="Zoom out"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setZoomLevel(1);
-                    setPanOffset({ x: 0, y: 0 });
-                  }}
-                  className="p-1 text-[#a8a29e]"
-                  title="Fit to Screen"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
+              <SchematicView
+                graph={activeDisplayGraph}
+                signals={computedSignals}
+                onToggleInput={handleToggleInput}
+                activeChange={activeSnapshot?.changes?.[0]}
+                selectedSignal={selectedSignal}
+                onSelectSignal={setSelectedSignal}
+              />
+            )}
+
+            {activeTab === 'truthTable' && (
+              <TruthTable truthTable={truthTable} />
+            )}
+
+            {activeTab === 'waveform' && (
+              <WaveformViewer
+                simulator={simulator}
+                inputs={inputStates}
+                onToggleInput={handleToggleInput}
+                onStepClock={handleStepClock}
+                onResetSimulator={() => simulator.reset()}
+              />
+            )}
+
+            {activeTab === 'verilog' && (
+              <VerilogViewer
+                verilog={compilerResult.verilog}
+                testbench={compilerResult.testbench}
+                circuitName={compilerResult.ast?.circuitName || 'Circuit'}
+              />
+            )}
+
+            {activeTab === 'ir' && (
+              <div className="p-4 h-full overflow-auto font-mono text-xs text-[#d6d3d1] select-text">
+                <div className="mb-4">
+                  <h3 className="font-bold text-amber-400 mb-1">Raw SSA Intermediate Representation (IR):</h3>
+                  <pre className="bg-[#1e1c1a] p-3 rounded-lg border border-[#3b3836]">
+                    {JSON.stringify(compilerResult.rawIR, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <h3 className="font-bold text-emerald-400 mb-1">Optimized IR:</h3>
+                  <pre className="bg-[#1e1c1a] p-3 rounded-lg border border-[#3b3836]">
+                    {JSON.stringify(compilerResult.optimizedIR, null, 2)}
+                  </pre>
+                </div>
               </div>
             )}
+
+            {activeTab === 'reverse' && (
+              <ReverseModeModal
+                onSendToEditor={(minimizedDsl) => {
+                  setDslCode(minimizedDsl);
+                  setActiveTab('schematic');
+                }}
+              />
+            )}
           </div>
-          {activeTab === 'schematic' && (
-            <SchematicCanvas
-              graph={compilerResult.graph}
-              computedSignals={computedSignals}
-              zoomLevel={zoomLevel}
-              panOffset={panOffset}
-              handleMouseDown={handleMouseDown}
-              handleMouseMove={handleMouseMove}
-              handleMouseUp={handleMouseUp}
-            />
-          )}
-          {activeTab === 'tokens' && (
-            <TokenTable tokens={compilerResult.tokens} />
-          )}
-          {activeTab === 'verilog' && (
-            <div className="flex-1 p-4 bg-[#1c1917] overflow-auto font-mono text-xs">
-              <div className="bg-[#292524] rounded-2xl p-4 border border-[#44403c] text-[#fefae0]">
-                <pre className="whitespace-pre-wrap leading-5">
-                  {compilerResult.verilog}
-                </pre>
-              </div>
-            </div>
-          )}
-          {activeTab === 'truthtable' && <TruthTable truthTable={truthTable} />}
-          {activeTab === 'optimizations' && (
-            <OptimizationReport optStats={compilerResult.optStats} />
-          )}
         </div>
       </div>
-      <SimulationDrawer
-        expandedInputs={compilerResult.ast?.expandedInputs}
-        inputStates={inputStates}
-        toggleInputSignal={toggleInputSignal}
+
+      {/* Bottom Pipeline Status Strip with Timing Profiler */}
+      <PipelineStrip
+        timings={compilerResult.timings}
+        diagnostics={compilerResult.diagnostics}
+        hasErrors={compilerResult.hasErrors}
       />
     </div>
   );
