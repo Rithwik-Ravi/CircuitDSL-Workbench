@@ -35,4 +35,17 @@ This document records architectural, design, and implementation decisions made d
 
 ## Decision 6: Single-Entry Compiler API & Web Worker (Phase 1)
 - **Decision:** Expose a single pure entry point `compile(source, options)` in `src/compiler/index.js` returning `{ tokens, ast, diagnostics, ir, optimized, passes, metrics, verilog, testbench, graph, equivalent }`.
-- **Execution:** Execute in a background Web Worker with automatic fallback to synchronous execution for non-worker environments or unit tests.
+- **Execution:** Execute in a background Web Worker (`compiler.worker.js`) via `compilerClient.js` with automatic fallback to synchronous execution for non-worker environments or unit tests.
+
+## Decision 7: Equivalence Verification Strategy (Phase 1)
+- **Decision:** Implement exhaustive verification for circuits with $\le 16$ inputs ($2^{16} = 65,536$ vectors max). For circuits $> 16$ inputs, verify across structured corner-case vectors (all 0s, all 1s, walking 1s, walking 0s) and random simulation vectors up to 2,048 samples.
+- **Counterexample Reporting:** On any output mismatch, immediately return `{ equivalent: false, counterexample: { inputs, failingOutput, expected, actual } }`.
+
+## Decision 8: Optimizer Time Machine Architecture (Phase 2 N1)
+- **Decision:** The optimizer preserves an immutable snapshot array of `{ passName, ir, changes: [{ pass, before, after, reason, target }] }` across all iterations. The UI provides a step slider, play/pause controls, and gate color-coding (red for eliminated, amber for merged CSE, blue for rewritten).
+
+## Decision 9: Reverse Mode Architecture (Phase 2 N2)
+- **Decision:** Implement exact Quine-McCluskey minimization with essential prime implicant extraction and Petrick-style greedy covering. For $\le 4$ variables, generate Gray-code ordered Karnaugh Maps (2x2, 2x4, 4x4) with interactive cell editing (0, 1, X don't-care) and one-click "Send to Editor".
+
+## Decision 10: Modernized IDE Workbench UI (Phase 3)
+- **Decision:** Replace the previous textarea-overlay editor with CodeMirror 6 featuring custom syntax highlighting, live lint squiggles, hover tooltips, and autocomplete. Replace the fixed grid schematic canvas with Dagre-based layered layout, SVG gate symbols, orthogonal wire routing, pan/zoom, interactive input toggling, and signal cone tracing.

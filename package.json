@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
+    "verify:verilog": "node scripts/verify_iverilog.js",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
